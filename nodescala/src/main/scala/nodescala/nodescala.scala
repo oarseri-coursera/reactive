@@ -29,7 +29,12 @@ trait NodeScala {
    *  @param token        the cancellation token
    *  @param body         the response to write back
    */
-  private def respond(exchange: Exchange, token: CancellationToken, response: Response): Unit = ???
+  private def respond(exchange: Exchange, token: CancellationToken, response: Response): Unit = {
+    while(token.nonCancelled && response.hasNext) {
+      exchange.write(response.next())
+    }
+    exchange.close()
+  }
 
   /** A server:
    *  1) creates and starts an http listener
@@ -41,8 +46,25 @@ trait NodeScala {
    *  @param handler        a function mapping a request to a response
    *  @return               a subscription that can stop the server and all its asynchronous operations *entirely*
    */
-  def start(relativePath: String)(handler: Request => Response): Subscription = ???
+  def start(relativePath: String)(handler: Request => Response): Subscription = {
+    val listener: Listener = createListener(relativePath)
+    val listenerSubscription: Subscription = listener.start()
+    val loopSubscription: Subscription = Future.run() { ct: CancellationToken => 
+      async {
+        while (ct.nonCancelled) {
+          val (req: Request,ex: Exchange) = await { listener.nextRequest() }
+          async {
+            println("Handling request.")
+            respond(ex, ct, handler(req))
+          }
+        }
+        listenerSubscription.unsubscribe()
+      }
+    }
 
+    // composite subscription that unsubscribes its two arguments when itself unsubscribed
+    Subscription(listenerSubscription, loopSubscription)
+  }
 }
 
 
@@ -54,7 +76,7 @@ object NodeScala {
 
   /** A response consists of a potentially long string (e.g. a data file).
    *  To be able to process this string in parts, the response is encoded
-   *  as an iterator over a subsequences of the response string.
+   *  as an iterator over subsequences of the response string.
    */
   type Response = Iterator[String]
 

@@ -96,12 +96,6 @@ class NodeScalaSuite extends FunSuite {
     assert(delay.isCompleted)
   }
 
-  // test("Future.delay should not complete after 1s when using a delay of 3s") {
-  //   val delay: Future[Unit] = Future.delay(3 seconds)
-  //   Await.result(delay, 1 seconds)
-  //   assert(!delay.isCompleted)
-  // }
-
   test("Future.run should let an indefinitely-running computation go until cancelled") {
     class TestVal(var v: String) {
       def set(newV: String) { this.synchronized { v = newV } }

@@ -53,7 +53,6 @@ package object nodescala {
       }
     }
 
-
     /** Given a list of futures `fs`, returns the future holding the value of the future from `fs` that completed first.
       * If the first completing future in `fs` fails, then the result is failed as well.
       *
@@ -78,12 +77,13 @@ package object nodescala {
       * Along with the 'now' method on futures, is one of only two methods that may use Await.ready/Await.result.
       * Hint: no (other) hint.
       */
-    def delay(t: Duration): Future[Unit] = {
-      Future {
+    def delay(t: Duration): Future[Unit] = Future {
+      try {
         blocking {
-          Try(Await.ready(Promise().future, t))
+          Await.ready(Future.never, t)
         }
-        Unit
+      } catch {
+        case e: Exception => Unit
       }
     }
 
@@ -135,7 +135,9 @@ package object nodescala {
      *  The resulting future contains a value returned by `cont`.
      */
     def continueWith[S](cont: Future[T] => S): Future[S] = {
-      Future { cont(f) }
+      val p: Promise[S] = Promise()
+      f onComplete { res => p.complete(Try(cont(f))) }
+      p.future
     }
 
     /** Continues the computation of this future by taking the result
