@@ -16,33 +16,76 @@ package object nodescala {
   implicit class FutureCompanionOps(val f: Future.type) extends AnyVal {
 
     /** Returns a future that is always completed with `value`.
-     */
-    def always[T](value: T): Future[T] = ???
+      * 
+      * Hint: use a promise.
+      */
+    def always[T](value: T): Future[T] = {
+      val p: Promise[T] = Promise()
+      p.success(value)
+      p.future
+    }
+
     /** Returns a future that is never completed.
-     *
-     *  This future may be useful when testing if timeout logic works correctly.
-     */
-    def never[T]: Future[T] = ???
+      *
+      * This future may be useful when testing if timeout logic works correctly.
+      * 
+      * Hint: use a promise.
+      */
+    def never[T]: Future[T] = {
+      val p: Promise[T] = Promise()
+      // (Never set it with a success or failure.)
+      p.future
+    }
+
     /** Given a list of futures `fs`, returns the future holding the list of values of all the futures from `fs`.
-     *  The returned future is completed only once all of the futures in `fs` have been completed.
-     *  The values in the list are in the same order as corresponding futures `fs`.
-     *  If any of the futures `fs` fails, the resulting future also fails.
-     */
-    def all[T](fs: List[Future[T]]): Future[List[T]] = ???
+      * The returned future is completed only once all of the futures in `fs` have been completed.
+      * The values in the list are in the same order as corresponding futures `fs`.
+      * If any of the futures `fs` fails, the resulting future also fails.
+      * 
+      * Hint: see the lectures.
+      */
+    def all[T](fs: List[Future[T]]): Future[List[T]] = {
+      fs.foldRight(Future.always(List.empty[T])) { (f, flst) =>
+        for {
+          lst <- flst
+          result <- f
+        } yield (result :: lst)
+      }
+    }
+
+
     /** Given a list of futures `fs`, returns the future holding the value of the future from `fs` that completed first.
-     *  If the first completing future in `fs` fails, then the result is failed as well.
-     *
-     *  E.g.:
-     *
-     *      Future.any(List(Future { 1 }, Future { 2 }, Future { throw new Exception }))
-     *
-     *  may return a `Future` succeeded with `1`, `2` or failed with an `Exception`.
-     */
-    def any[T](fs: List[Future[T]]): Future[T] = ???
+      * If the first completing future in `fs` fails, then the result is failed as well.
+      *
+      * E.g.:
+      *
+      *     Future.any(List(Future { 1 }, Future { 2 }, Future { throw new Exception }))
+      *
+      * may return a `Future` succeeded with `1`, `2` or failed with an `Exception`.
+      * 
+      * Hint: use a promise.
+      */
+    def any[T](fs: List[Future[T]]): Future[T] = {
+      val p: Promise[T] = Promise()
+      fs.map { f => f onComplete { res => if (!p.isCompleted) p.complete(res) } }
+      p.future
+    }
 
     /** Returns a future with a unit value that is completed after time `t`.
-     */
-    def delay(t: Duration): Future[Unit] = ???
+      * 
+      * This is the only method that is allowed to be blocking.
+      * It may block the execution thread of this future, but may not block the caller thread.
+      * Along with the 'now' method on futures, is one of only two methods that may use Await.ready/Await.result.
+      * Hint: no (other) hint.
+      */
+    def delay(t: Duration): Future[Unit] = {
+      Future {
+        blocking {
+          Try(Await.ready(Promise().future, t))
+        }
+        Unit
+      }
+    }
 
     /** Completes this future with user input.
      */
@@ -54,7 +97,12 @@ package object nodescala {
 
     /** Creates a cancellable context for an execution and runs it.
      */
-    def run()(f: CancellationToken => Future[Unit]): Subscription = ???
+    def run()(f: CancellationToken => Future[Unit]): Subscription = {
+      val cts = CancellationTokenSource()
+      val ct = cts.cancellationToken
+      f(ct)
+      cts
+    }
 
   }
 
@@ -63,14 +111,22 @@ package object nodescala {
   implicit class FutureOps[T](val f: Future[T]) extends AnyVal {
 
     /** Returns the result of this future if it is completed now.
-     *  Otherwise, throws a `NoSuchElementException`.
-     *
-     *  Note: This method does not wait for the result.
-     *  It is thus non-blocking.
-     *  However, it is also non-deterministic -- it may throw or return a value
-     *  depending on the current state of the `Future`.
-     */
-    def now: T = ???
+      * Otherwise, throws a `NoSuchElementException`.
+      *
+      * Note: This method does not wait for the result.
+      * It is thus non-blocking.
+      * However, it is also non-deterministic -- it may throw or return a value
+      * depending on the current state of the `Future`.
+      *
+      * Along with Future.delay, is one of only two methods that may use Await.ready/Await.result.
+      * Hint: use Await.result to implement this. What should be the time out ?
+      */
+    def now: T = {
+      if (f.isCompleted)
+        Await.result(f, 0 seconds)
+      else
+        throw new NoSuchElementException("Future not completed.")
+    }
 
     /** Continues the computation of this future by taking the current future
      *  and mapping it into another future.
@@ -78,7 +134,9 @@ package object nodescala {
      *  The function `cont` is called only after the current future completes.
      *  The resulting future contains a value returned by `cont`.
      */
-    def continueWith[S](cont: Future[T] => S): Future[S] = ???
+    def continueWith[S](cont: Future[T] => S): Future[S] = {
+      Future { cont(f) }
+    }
 
     /** Continues the computation of this future by taking the result
      *  of the current future and mapping it into another future.
@@ -86,7 +144,11 @@ package object nodescala {
      *  The function `cont` is called only after the current future completes.
      *  The resulting future contains a value returned by `cont`.
      */
-    def continue[S](cont: Try[T] => S): Future[S] = ???
+    def continue[S](cont: Try[T] => S): Future[S] = {
+      val p: Promise[S] = Promise()
+      f onComplete { res => p.complete(Try(cont(res))) }
+      p.future
+    }
 
   }
 
@@ -143,4 +205,3 @@ package object nodescala {
     }
   }
 }
-
