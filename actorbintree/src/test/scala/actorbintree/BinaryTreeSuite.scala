@@ -120,6 +120,9 @@ class BinaryTreeSuite(_system: ActorSystem) extends TestKit(_system) with FunSui
     val ops = randomOperations(requester.ref, count)
     val expectedReplies = referenceReplies(ops)
 
+    println("ops: " + ops.take(100).mkString("\n"))
+    println("er: " + expectedReplies.take(100).mkString("\n"))
+
     ops foreach { op =>
       topNode ! op
       if (rnd.nextDouble() < 0.1) topNode ! GC
