@@ -120,13 +120,71 @@ class BinaryTreeSuite(_system: ActorSystem) extends TestKit(_system) with FunSui
     val ops = randomOperations(requester.ref, count)
     val expectedReplies = referenceReplies(ops)
 
-    println("ops: " + ops.take(100).mkString("\n"))
-    println("er: " + expectedReplies.take(100).mkString("\n"))
-
     ops foreach { op =>
       topNode ! op
       if (rnd.nextDouble() < 0.1) topNode ! GC
     }
     receiveN(requester, ops, expectedReplies)
   }
+
+
+  test("handle a small deterministic GC with queuing") {
+    val requester = TestProbe()
+    val req: ActorRef = requester.ref
+    val topNode: ActorRef = system.actorOf(Props[BinaryTreeSet])
+
+    val ops1: List[Operation] = List(
+      Insert(req, 1, 10),
+      Contains(req, 2, 10),
+      Insert(req, 3, 20),
+      Contains(req, 4, 10),
+      Contains(req, 5, 20),
+      Remove(req, 6, 10),
+      Contains(req, 7, 10),
+      Contains(req, 8, 20),
+      Remove(req, 9, 10),
+      Contains(req, 10, 10)
+    )
+
+    val ops2: List[Operation] = List(
+      Insert(req, 11, 100),
+      Contains(req, 12, 100),
+      Insert(req, 13, 200),
+      Contains(req, 14, 100),
+      Contains(req, 15, 200),
+      Remove(req, 16, 100),
+      Contains(req, 17, 100),
+      Contains(req, 18, 200),
+      Remove(req, 19, 100),
+      Contains(req, 20, 100)
+    )
+
+    def referenceReplies(operations: Seq[Operation]): Seq[OperationReply] = {
+      var referenceSet = Set.empty[Int]
+      def replyFor(op: Operation): OperationReply = op match {
+        case Insert(_, seq, elem) =>
+          referenceSet = referenceSet + elem
+          OperationFinished(seq)
+        case Remove(_, seq, elem) =>
+          referenceSet = referenceSet - elem
+          OperationFinished(seq)
+        case Contains(_, seq, elem) =>
+          ContainsResult(seq, referenceSet(elem))
+      }
+
+      for (op <- operations) yield replyFor(op)
+    }
+
+    // Send all of ops1, then send GC, then send all of ops2.
+    ops1 foreach { topNode ! _ }
+    topNode ! GC
+    ops2 foreach { topNode ! _ }
+
+    val ops = ops1 ++ ops2
+    val expectedReplies = referenceReplies(ops)
+    receiveN(requester, ops, expectedReplies)
+  }
+
+
+
 }

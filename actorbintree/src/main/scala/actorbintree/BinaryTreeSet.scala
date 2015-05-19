@@ -71,7 +71,6 @@ class BinaryTreeSet extends Actor {
     case GC => {
       val newRoot: ActorRef = createRoot
       root ! CopyTo(newRoot)
-      println("### Doing GC!!!!!!!!")
       context.become(garbageCollecting(newRoot))
     }
     case x => println("BinaryTreeSet received unintelligible message, ignoring: " + x)
@@ -84,7 +83,6 @@ class BinaryTreeSet extends Actor {
     */
   def garbageCollecting(newRoot: ActorRef): Receive = {
     case o: Operation => pendingQueue = pendingQueue.enqueue(o)
-    //case GC => println("Received GC request while already garbage collecting, ignoring.")
     case GC => {}
     case CopyFinished => {
       root ! PoisonPill              // Stop all actors in the old tree.
@@ -92,12 +90,8 @@ class BinaryTreeSet extends Actor {
 
       // Take care of accumulated messages in queue.
       context.become(normal)
-      println("***pq size: " + pendingQueue.size)
-      println("***pq first 20: " + pendingQueue.take(20))
-      pendingQueue.foreach( self ! _ )
+      pendingQueue.foreach( root ! _ )
       pendingQueue = Queue.empty[Operation]
-      println("***pq size: " + pendingQueue.size)
-
     }
     case x => println("BinaryTreeSet received unintelligible message during gc, ignoring: " + x)
   }
