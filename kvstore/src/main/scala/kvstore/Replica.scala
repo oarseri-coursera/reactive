@@ -3,18 +3,17 @@ package kvstore
 import akka.actor.{ Props, ActorRef, Actor }
 import kvstore.Arbiter._
 import scala.collection.immutable.Queue //
-//import akka.actor.SupervisorStrategy.Restart
+//import akka.actor.SupervisorStrategy.Restart  // FIXTHIS clean up all these comments.
 import scala.annotation.tailrec //
 import akka.pattern.{ ask, pipe } // used
 import scala.concurrent.Future
 import akka.actor.Terminated  //
 import scala.concurrent.duration._
 import scala.language.postfixOps
-import akka.actor.PoisonPill //
+import akka.actor.PoisonPill // used
 import akka.actor.OneForOneStrategy
 import akka.actor.SupervisorStrategy
 import akka.actor.SupervisorStrategy.{ Resume, Escalate }
-import akka.util.Timeout // used
 
 object Replica {
   sealed trait Operation {
@@ -139,21 +138,16 @@ class Replica(val arbiter: ActorRef, persistenceProps: Props) extends Actor {
     val persistF: Future[Persisted] = Asker.askWithRetries(
       persister, Persist(k,vOpt,ackId), 100 milliseconds, 10).mapTo[Persisted]
 
-    // Future for replicating the update.  (Actor needs to be updated when replicas come/go.)
-    implicit val timeout = Timeout.durationToTimeout(1 second)
-    val propagator = context.actorOf(Propagator.props(k,vOpt,ackId))
-    system.eventStream.subscribe(propagator, classOf[ReplicatorsJoined])
-    system.eventStream.subscribe(propagator, classOf[ReplicatorsDeparted])
-    val propagateF: Future[Boolean] =
-      (propagator ? Start(secondaries.values.toSet)).mapTo[Boolean]
-    propagateF.onComplete { case _ => propagator ! PoisonPill }
-    // FIXTHIS: Unregister on death?
+    // Future for replicating the update.
+    // (Internal actor needs to be updated by subscription whenever replicas come/go.)
+    val propagateF: Future[Boolean]
+    = Propagator.propagate(k, vOpt, id, secondaries.values.toSet)
 
     // If persistence and propagator future both succeed in time (they both have 1 second
     // timeouts, implemented internally), then respond to requestor with OperationAck(id);
     // otherwise respond with OperationFailed(id).
     val processedF = for {
-      persisted <- persistF map { case p: Persisted => true; case _ => false }
+      persisted <- persistF map { case p: Persisted => true }
       propagated <- propagateF
     } yield (persisted && propagated)
 

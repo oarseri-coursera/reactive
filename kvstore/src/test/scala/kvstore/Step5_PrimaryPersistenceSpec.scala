@@ -25,7 +25,6 @@ class Step5_PrimaryPersistenceSpec extends TestKit(ActorSystem("Step5PrimaryPers
     system.shutdown()
   }
 
-/*
   test("case1: Primary does not acknowledge updates which have not been persisted") {
     val arbiter = TestProbe()
     val persistence = TestProbe()
@@ -82,7 +81,6 @@ class Step5_PrimaryPersistenceSpec extends TestKit(ActorSystem("Step5PrimaryPers
     client.waitFailed(setId)
   }
 
-*/
   test("case4: Primary generates failure after 1 second if global acknowledgement fails") {
     val arbiter = TestProbe()
     val persistence = TestProbe()
@@ -112,13 +110,13 @@ class Step5_PrimaryPersistenceSpec extends TestKit(ActorSystem("Step5PrimaryPers
     arbiter.send(primary, JoinedPrimary)
     arbiter.send(primary, Replicas(Set(primary, secondaryA.ref, secondaryB.ref)))
 
-    val setId = client.set("foolio", "barrio")
+    val setId = client.set("foo", "bar")
     val seqA = secondaryA.expectMsgType[Snapshot].seq
     val seqB = secondaryB.expectMsgType[Snapshot].seq
     client.nothingHappens(300.milliseconds)
-    secondaryA.reply(SnapshotAck("foolio", seqA))
+    secondaryA.reply(SnapshotAck("foo", seqA))
     client.nothingHappens(300.milliseconds)
-    secondaryB.reply(SnapshotAck("foolio", seqB))
+    secondaryB.reply(SnapshotAck("foo", seqB))
     client.waitAck(setId)
   }
 }

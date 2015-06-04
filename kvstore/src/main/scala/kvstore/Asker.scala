@@ -8,7 +8,8 @@ import scala.language.postfixOps
 import akka.util.Timeout
 
 object Asker {
-  def askWithRetries[T](recipient: ActorRef, msg: T, interval: FiniteDuration, maxAttempts: Int)(implicit context: ActorContext): Future[Any] = {
+  def askWithRetries[T](recipient: ActorRef, msg: T, interval: FiniteDuration, maxAttempts: Int)
+                       (implicit context: ActorContext): Future[Any] = {
     implicit val timeout = Timeout.durationToTimeout(interval * maxAttempts)
     context.actorOf(props(interval, maxAttempts)) ? Ask(recipient, msg)
   }

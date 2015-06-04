@@ -1,8 +1,11 @@
 package kvstore
 
-import akka.actor.{ Props, ActorRef, Actor}
+import akka.actor.{ Props, ActorRef, Actor, ActorContext }
+import akka.pattern.ask
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
+import akka.actor.PoisonPill
+import akka.util.Timeout
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
@@ -14,6 +17,16 @@ object Propagator {
 
   def props(k: String, vOpt: Option[String], id: Long): Props =
     Props(new Propagator(k,vOpt,id))
+
+  def propagate(k: String, vOpt: Option[String], id: Long, initReplicators: Set[ActorRef])
+               (implicit context: ActorContext): Future[Boolean] = {
+    implicit val timeout = Timeout.durationToTimeout(1 second)
+    val propagator = context.actorOf(props(k,vOpt,id))
+    val propagateF: Future[Boolean] =
+      (propagator ? Start(initReplicators)).mapTo[Boolean]
+    propagateF.onComplete { case _ => propagator ! PoisonPill }
+    propagateF
+  }
 }
 
 // Sends given replication message to all the replicators in provided initial
@@ -27,9 +40,17 @@ object Propagator {
 // replicator or not when we think we have enough responses to cover the new set.
 // Could be a good tradeoff to just kill all active propagators whenever the
 // cluster grows.)
+//
+// Should only need to run this using the propagate method in companion object;
+// if you start one otherwise, make sure to stop it!  Current configuration
+// will keep running indefinitely and send 'true' whenever hearing a new
+// broadcast event whereby the set of pending replicators is empty.  (Assuming
+// that subscriptions will end automatically by whatever means of stopping is
+// employed.)
 class Propagator(k: String, vOpt: Option[String], id: Long) extends Actor {
   import Propagator._
   import Replicator._
+  import context.system
 
   var requestor: ActorRef = _
   var pendingReplicators: Set[ActorRef] = Set.empty
@@ -37,6 +58,8 @@ class Propagator(k: String, vOpt: Option[String], id: Long) extends Actor {
   def receive = {
     case Start(initReps) =>
       requestor = sender
+      system.eventStream.subscribe(self, classOf[ReplicatorsJoined])
+      system.eventStream.subscribe(self, classOf[ReplicatorsDeparted])
       processJoined(initReps)
       checkIfDone  // only relevant if initReps is empty.
       context.become(processing)
@@ -76,9 +99,6 @@ class Propagator(k: String, vOpt: Option[String], id: Long) extends Actor {
   def checkIfDone = {
     if (pendingReplicators.isEmpty) {
       requestor ! true
-      // Should I kill my askers?  They should stop on their own once I stop myself...
-      context.stop(self)
     }
   }
 }
-
