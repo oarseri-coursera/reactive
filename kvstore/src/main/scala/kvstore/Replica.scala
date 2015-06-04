@@ -37,8 +37,10 @@ object Replica {
 class Replica(val arbiter: ActorRef, persistenceProps: Props) extends Actor {
   import Replica._
   import Replicator._
+  import Propagator._
   import Persistence._
   import context.dispatcher
+  import context.system
 
   /*
    * The contents of this actor is just a suggestion, you can implement it in any way you like.
@@ -48,7 +50,6 @@ class Replica(val arbiter: ActorRef, persistenceProps: Props) extends Actor {
   // a map from secondary replicas to replicators
   var secondaries = Map.empty[ActorRef, ActorRef]
   // the current set of replicators
-  var replicators = Set.empty[ActorRef]
   var expectedSeq = 0l
 
   // Start up your own persistence actor, and shut it down on completion.
@@ -58,7 +59,7 @@ class Replica(val arbiter: ActorRef, persistenceProps: Props) extends Actor {
   // Otherwise, follow default strategy.
   override val supervisorStrategy =
     OneForOneStrategy(maxNrOfRetries = 100, withinTimeRange = 1 second) {
-      case _: PersistenceException => { println("RESUMING"); Resume }
+      case _: PersistenceException => { myLog("RESUMING"); Resume }
       case t => super.supervisorStrategy.decider.applyOrElse(t, (_: Any) => Escalate)
     }
 
@@ -86,7 +87,8 @@ class Replica(val arbiter: ActorRef, persistenceProps: Props) extends Actor {
       sender ! GetResult(k, vOpt, id)
     case Replicas(reps) =>
       myLog(s"++> REPLICAS: $reps")
-      updateCluster(reps)
+      // Remove self from set, only want to update secondaries.
+      updateCluster(reps - self)
     case _ =>
   }
 
@@ -103,8 +105,28 @@ class Replica(val arbiter: ActorRef, persistenceProps: Props) extends Actor {
 
   // Used by primary to process changes in cluster membership.
   def updateCluster(reps: Set[ActorRef]): Unit = {
-    // Newly arrived (secondary) replica: Create new replicator for it; forward all k=v pairs to it.
-    // Newly departed (secondary) replica: Terminate its replicator.
+    val currentReplicas = secondaries.keys.toSet
+    val joinedReplicas = reps -- currentReplicas
+    val departedReplicas = currentReplicas -- reps
+
+    // Joined replicas: Create replicators, forward all k=v pairs, publish to propagators.
+    // This should be done before departed replicas are handled, to be strict on replication.
+    val joinedReplicators: Set[ActorRef] = joinedReplicas.map { r =>
+      val replicator = context.actorOf(Replicator.props(r))
+      secondaries += r -> replicator
+      replicator
+    }
+    // FIXTHIS forward all k=v pairs
+    system.eventStream.publish(ReplicatorsJoined(joinedReplicators))
+
+    // Departed replicas: publish to propagators and then terminate.
+    val departedReplicators: Set[ActorRef] = departedReplicas.map { r =>
+      val replicator = secondaries(r)
+      secondaries -= r
+      replicator
+    }
+    system.eventStream.publish(ReplicatorsDeparted(departedReplicators))
+    departedReplicators.map { _ ! PoisonPill }
   }
 
   // Used by primary to process updates (inserts and removes).  Ultimate result, if any,
@@ -118,21 +140,25 @@ class Replica(val arbiter: ActorRef, persistenceProps: Props) extends Actor {
       persister, Persist(k,vOpt,ackId), 100 milliseconds, 10).mapTo[Persisted]
 
     // Future for replicating the update.  (Actor needs to be updated when replicas come/go.)
-    implicit val timeout = Timeout.durationToTimeout(interval * maxAttempts)
+    implicit val timeout = Timeout.durationToTimeout(1 second)
     val propagator = context.actorOf(Propagator.props(k,vOpt,ackId))
-    val propagateF: Future[Boolean] = Propagator ? Start(replicators)
-    // FIXTHIS: Register self to receive updates, unregister on death.  Maybe subscribe?
+    system.eventStream.subscribe(propagator, classOf[ReplicatorsJoined])
+    system.eventStream.subscribe(propagator, classOf[ReplicatorsDeparted])
+    val propagateF: Future[Boolean] =
+      (propagator ? Start(secondaries.values.toSet)).mapTo[Boolean]
+    propagateF.onComplete { case _ => propagator ! PoisonPill }
+    // FIXTHIS: Unregister on death?
 
     // If persistence and propagator future both succeed in time (they both have 1 second
     // timeouts, implemented internally), then respond to requestor with OperationAck(id);
     // otherwise respond with OperationFailed(id).
     val processedF = for {
-      persisted <- persistF map { case p: Persisted => true; case _ => false}
+      persisted <- persistF map { case p: Persisted => true; case _ => false }
       propagated <- propagateF
     } yield (persisted && propagated)
 
-    processedF.onSuccess{ requestor ! OperationAck(ackId) }
-    processedF.onFailure{ requestor ! OperationFailed(ackId) }
+    processedF.onSuccess { case x => requestor ! OperationAck(ackId) }
+    processedF.onFailure { case x => requestor ! OperationFailed(ackId) }
   }
 
   // Used by secondary to process replication.  Ultimate result, if any, is to send back

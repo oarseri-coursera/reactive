@@ -1,87 +1,84 @@
 package kvstore
 
-import akka.actor.{ Props, ActorRef, Actor, ActorContext, Cancellable, Status }
-import scala.annotation.tailrec //
-import akka.pattern.{ ask, pipe } // used
+import akka.actor.{ Props, ActorRef, Actor}
+import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.language.postfixOps
-import akka.util.Timeout // used
 
 object Propagator {
-  // These two are the same, just enforcing semantics.
   case class Start(initReplicators: Set[ActorRef])
-  case class ClusterUpdate(newReplicators: Set[ActorRef])
-  def props(k: String, vOpt: Option[String], id: Long): Props = Propagator(new Asker(k,vOpt,id))
+  case class ReplicatorsJoined(replicators: Set[ActorRef])
+  case class ReplicatorsDeparted(replicators: Set[ActorRef])
+  case class ReplicatorFinished(replicator: ActorRef)
+
+  def props(k: String, vOpt: Option[String], id: Long): Props =
+    Props(new Propagator(k,vOpt,id))
 }
 
-// Given a message representing the equivalent of 'recipient ? msg', uses
-// retries to perform the ask up to <maxAttempts> times, at timeout
-// intervals of length <interval>.
+// Sends given replication message to all the replicators in provided initial
+// set.  Receives updates about additions or subtractions to the set of
+// replicators and reacts according so as to respond to initiating actor with
+// "true" message representing success.
 //
 // (Wish you could just count responses instead of individually associating them
-// them with individual secondaries...but count can get messed up if a removal
+// them with individual replicators...but count can get messed up if a removal
 // occurs while waiting for responses; can't be sure if we are counting the old
-// secondary or not when we think we have enough responses to cover the new set.
-// Could be a good tradeoff to just kill all active persisters whenever the
+// replicator or not when we think we have enough responses to cover the new set.
+// Could be a good tradeoff to just kill all active propagators whenever the
 // cluster grows.)
 class Propagator(k: String, vOpt: Option[String], id: Long) extends Actor {
-
   import Propagator._
+  import Replicator._
 
   var requestor: ActorRef = _
-  var replicators: Set[ActorRef] = Set.empty
+  var pendingReplicators: Set[ActorRef] = Set.empty
 
   def receive = {
-    case Start(initReplicators) =>
+    case Start(initReps) =>
       requestor = sender
-      processClusterUpdate(initReplicators)
+      processJoined(initReps)
+      checkIfDone  // only relevant if initReps is empty.
       context.become(processing)
   }
 
   def processing: Receive = {
-    case ClusterUpdate(replicators) =>
-      processClusterUpdate(replicators)
-    case r: Replicated =>
-      markReplicatorDone(sender)
+    case ReplicatorsJoined(reps) =>
+      processJoined(reps)
+    case ReplicatorsDeparted(reps) =>
+      processDeparted(reps)
+      checkIfDone
+    case ReplicatorFinished(rep) =>
+      markReplicatorFinished(rep)
       checkIfDone
   }
 
-  // STARTHERE: Actually, will receive updates as specific "added" and "removed" messages
-  // since primary already has to break things down to this granularity anyway.  It should
-  // send "added" messages before "removed" messages to be strict.
+  def processJoined(reps: Set[ActorRef]) = {
+    // Create asks, update pending replicators set.
+    reps.map { rep =>
+      val ask: Future[Replicated] =
+        Asker.askWithRetries(rep, Replicate(k,vOpt,id), 100 milliseconds, 10).mapTo[Replicated]
+      ask.onSuccess { case _ => self ! ReplicatorFinished(rep) }
+    }
+    pendingReplicators ++= reps
+  }
 
+  def processDeparted(reps: Set[ActorRef]) = {
+    // Update pending replicators set.  (Not bothering to cancel their futures.)
+    pendingReplicators --= reps
+  }
 
-  def processNewReplicators(newReplicators) = {
-    // For newly added, create askers 
-    // For newly removed, 
-    // For rest, do nothing.
-
-    // Update replicators set.
-
-    checkIfDone
+  def markReplicatorFinished(rep: ActorRef) = {
+    // Update pending replicators set.  (Equivalent to no-op if replicator already departed.)
+    pendingReplicators -= rep
   }
 
   def checkIfDone = {
-    // If we are waiting for zero replications, send true back to requestor.
-  }
-
-
-  def retrying[T](sub: Cancellable, s: ActorRef, r: ActorRef, m: T): Receive = {
-    case Retry =>
-      if (attempts < maxAttempts) {
-        attempts += 1
-        r ! m
-      } else {
-        s ! Status.Failure(new Exception(
-             s"Reached retry limit after $attempts attempts"))
-        sub.cancel
-        context.stop(self)
-      }
-    case result =>
-      s ! result
-      sub.cancel
+    if (pendingReplicators.isEmpty) {
+      requestor ! true
+      // Should I kill my askers?  They should stop on their own once I stop myself...
       context.stop(self)
+    }
   }
 }
 

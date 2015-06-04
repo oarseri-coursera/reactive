@@ -15,7 +15,7 @@ import org.scalactic.ConversionCheckedTripleEquals
 
 class Step5_PrimaryPersistenceSpec extends TestKit(ActorSystem("Step5PrimaryPersistenceSpec"))
     with FunSuiteLike
-        with BeforeAndAfterAll
+    with BeforeAndAfterAll
     with Matchers
     with ConversionCheckedTripleEquals
     with ImplicitSender
@@ -25,6 +25,7 @@ class Step5_PrimaryPersistenceSpec extends TestKit(ActorSystem("Step5PrimaryPers
     system.shutdown()
   }
 
+/*
   test("case1: Primary does not acknowledge updates which have not been persisted") {
     val arbiter = TestProbe()
     val persistence = TestProbe()
@@ -81,11 +82,12 @@ class Step5_PrimaryPersistenceSpec extends TestKit(ActorSystem("Step5PrimaryPers
     client.waitFailed(setId)
   }
 
+*/
   test("case4: Primary generates failure after 1 second if global acknowledgement fails") {
     val arbiter = TestProbe()
     val persistence = TestProbe()
-        val primary = system.actorOf(Replica.props(arbiter.ref, Persistence.props(flaky = false)), "case4-primary")
-        val secondary = TestProbe()
+    val primary = system.actorOf(Replica.props(arbiter.ref, Persistence.props(flaky = false)), "case4-primary")
+    val secondary = TestProbe()
     val client = session(primary)
 
     arbiter.expectMsg(Join)
@@ -102,22 +104,21 @@ class Step5_PrimaryPersistenceSpec extends TestKit(ActorSystem("Step5PrimaryPers
   test("case5: Primary acknowledges only after persistence and global acknowledgement") {
     val arbiter = TestProbe()
     val persistence = TestProbe()
-        val primary = system.actorOf(Replica.props(arbiter.ref, Persistence.props(flaky = false)), "case5-primary")
-        val secondaryA, secondaryB = TestProbe()
+    val primary = system.actorOf(Replica.props(arbiter.ref, Persistence.props(flaky = false)), "case5-primary")
+    val secondaryA, secondaryB = TestProbe()
     val client = session(primary)
 
     arbiter.expectMsg(Join)
     arbiter.send(primary, JoinedPrimary)
     arbiter.send(primary, Replicas(Set(primary, secondaryA.ref, secondaryB.ref)))
 
-    val setId = client.set("foo", "bar")
+    val setId = client.set("foolio", "barrio")
     val seqA = secondaryA.expectMsgType[Snapshot].seq
     val seqB = secondaryB.expectMsgType[Snapshot].seq
     client.nothingHappens(300.milliseconds)
-    secondaryA.reply(SnapshotAck("foo", seqA))
+    secondaryA.reply(SnapshotAck("foolio", seqA))
     client.nothingHappens(300.milliseconds)
-    secondaryB.reply(SnapshotAck("foo", seqB))
+    secondaryB.reply(SnapshotAck("foolio", seqB))
     client.waitAck(setId)
   }
-
 }

@@ -1,12 +1,11 @@
 package kvstore
 
 import akka.actor.{ Props, ActorRef, Actor, ActorContext, Cancellable, Status }
-import scala.annotation.tailrec //
-import akka.pattern.{ ask, pipe } // used
+import akka.pattern.ask
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.language.postfixOps
-import akka.util.Timeout // used
+import akka.util.Timeout
 
 object Asker {
   def askWithRetries[T](recipient: ActorRef, msg: T, interval: FiniteDuration, maxAttempts: Int)(implicit context: ActorContext): Future[Any] = {
@@ -17,7 +16,8 @@ object Asker {
   case object Retry
   case class Ask[T](recipient: ActorRef, msg: T)
   case class AskerAttempt[T](recipient: ActorRef, msg: T, sender: ActorRef, attempt: Int)
-  def props(interval: FiniteDuration, maxAttempts: Int): Props = Props(new Asker(interval, maxAttempts))
+  def props(interval: FiniteDuration, maxAttempts: Int): Props =
+    Props(new Asker(interval, maxAttempts))
 }
 
 // Given a message representing the equivalent of 'recipient ? msg', uses
