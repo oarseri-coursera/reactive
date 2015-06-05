@@ -9,6 +9,8 @@ object Arbiter {
   case object JoinedPrimary
   case object JoinedSecondary
 
+  case object SecondariesInitiationFailure
+
   /**
    * This message contains all replicas currently known to the arbiter, including the primary.
    */

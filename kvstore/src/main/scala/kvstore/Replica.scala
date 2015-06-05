@@ -97,7 +97,8 @@ class Replica(val arbiter: ActorRef, persistenceProps: Props) extends Actor {
       myLog(s"==> ($id) GET $k")
       val vOpt = kv.get(k)
       sender ! GetResult(k, vOpt, id)
-    case s: Snapshot =>
+    case s @ Snapshot(k,vOpt,seq) =>
+      myLog(s"--> [$seq] SNAPSHOT $k=$vOpt")
       processSnapshot(s, sender)
     case _ =>
   }
@@ -108,23 +109,43 @@ class Replica(val arbiter: ActorRef, persistenceProps: Props) extends Actor {
     val joinedReplicas = reps -- currentReplicas
     val departedReplicas = currentReplicas -- reps
 
-    // Joined replicas: Create replicators, forward all k=v pairs, publish to propagators.
-    // This should be done before departed replicas are handled, to be strict on replication.
+    // Joined should be handled before departed, to be strict about replication.
+    processJoinedReplicas(joinedReplicas)
+    processDepartedReplicas(departedReplicas)
+  }
+
+  def processJoinedReplicas(joinedReplicas: Set[ActorRef]) = {
+    // Register replicas and create/register replicators.
     val joinedReplicators: Set[ActorRef] = joinedReplicas.map { r =>
       val replicator = context.actorOf(Replicator.props(r))
       secondaries += r -> replicator
       replicator
     }
-    // FIXTHIS forward all k=v pairs
+
+    // Publish joined replicators to propagators.
     system.eventStream.publish(ReplicatorsJoined(joinedReplicators))
 
-    // Departed replicas: publish to propagators and then terminate.
+    // Forward all k=v pairs to new replicators.
+    val propagateFs: List[Future[Boolean]] = kv.map { case(k,v) =>
+      // repeatedly using -1, representing initial propagation(s) vs. user-initiated.
+      Propagator.propagate(k, Some(v), -1l, joinedReplicators)
+    }.toList
+    val propagatesF: Future[List[Boolean]] = Future.sequence(propagateFs)
+    propagatesF.onFailure { case _ => arbiter ! SecondariesInitiationFailure }  // (not handled)
+  }
+
+  def processDepartedReplicas(departedReplicas: Set[ActorRef]) = {
+    // Unregister departed replicas/replicators.
     val departedReplicators: Set[ActorRef] = departedReplicas.map { r =>
       val replicator = secondaries(r)
       secondaries -= r
       replicator
     }
+
+    // Publish departed replicators to propagators.
     system.eventStream.publish(ReplicatorsDeparted(departedReplicators))
+
+    // Kill departed replicators.
     departedReplicators.map { _ ! PoisonPill }
   }
 

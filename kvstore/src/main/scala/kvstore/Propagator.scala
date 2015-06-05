@@ -34,12 +34,12 @@ object Propagator {
 // replicators and reacts according so as to respond to initiating actor with
 // "true" message representing success.
 //
-// (Wish you could just count responses instead of individually associating them
+// (Wish you could just count responses instead of individually associating
 // them with individual replicators...but count can get messed up if a removal
-// occurs while waiting for responses; can't be sure if we are counting the old
-// replicator or not when we think we have enough responses to cover the new set.
-// Could be a good tradeoff to just kill all active propagators whenever the
-// cluster grows.)
+// occurs while waiting for responses; can't be sure if we are counting the
+// old replicator or not when we think we have enough responses to cover the
+// new set.  Could be a good tradeoff to just kill all active propagators
+// whenever the cluster grows.)
 //
 // Should only need to run this using the propagate method in companion object;
 // if you start one otherwise, make sure to stop it!  Current configuration

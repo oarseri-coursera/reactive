@@ -54,12 +54,14 @@ class Replicator(val replica: ActorRef) extends Actor {
   
   def receive: Receive = {
     case rep @ Replicate(k,vOpt,id) =>
-      myLog(s"~~> ($id) REPLICATE $k=$vOpt")
+      myLog(s"~~> ($id) REPLICATE $k=$vOpt from $sender")
       stageSnapshot(rep, sender)
     case SnapshotAck(k,seq) =>
       myLog(s"~~> [$seq] SNAPSHOTACK $k")
       val (ar: ActorRef, rep: Replicate) = acks(seq)
+      println("********************* acks before" + acks)
       acks -= seq
+      println("********************* acks after" + acks)
       removeFromPending(seq)
       ar ! Replicated(rep.key,rep.id)
     case TimeForBatchSend =>
@@ -68,8 +70,9 @@ class Replicator(val replica: ActorRef) extends Actor {
   }
 
   // Adds snapshot to pending queue and registers its expected ack.
-  // Not really batched in the sense of consolidating snapshots for shared key--senders of 
-  // the the replicate messages generating the snapshots might be different.
+  // Not really batched in the sense of consolidating snapshots for shared key--senders
+  // of the the Replicate messages generating the snapshots might be different (like,
+  // if the primary changes)
   def stageSnapshot(rep: Replicate, sender: ActorRef): Unit = rep match {
     case Replicate(k,vOpt,id) =>
       val seq = nextSeq
@@ -79,6 +82,7 @@ class Replicator(val replica: ActorRef) extends Actor {
 
   // (Re-)sends all snapshots that are currently pending.
   def sendBatchOfSnapshots: Unit = {
+    println("############### Sending Batch!")
     pending.foreach { replica ! _ } // oldest in front
   }
 
