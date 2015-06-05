@@ -71,7 +71,10 @@ class Propagator(k: String, vOpt: Option[String], id: Long) extends Actor {
     case ReplicatorsDeparted(reps) =>
       processDeparted(reps)
       checkIfDone
-    case ReplicatorFinished(rep) =>
+    case r: Replicated =>
+      markReplicatorFinished(sender)
+      checkIfDone
+    case ReplicatorFinished(rep) =>  // replicated
       markReplicatorFinished(rep)
       checkIfDone
   }
@@ -79,9 +82,7 @@ class Propagator(k: String, vOpt: Option[String], id: Long) extends Actor {
   def processJoined(reps: Set[ActorRef]) = {
     // Create asks, update pending replicators set.
     reps.map { rep =>
-      val ask: Future[Replicated] =
-        Asker.askWithRetries(rep, Replicate(k,vOpt,id), 100 milliseconds, 10).mapTo[Replicated]
-      ask.onSuccess { case _ => self ! ReplicatorFinished(rep) }
+      rep ! Replicate(k,vOpt,id)
     }
     pendingReplicators ++= reps
   }

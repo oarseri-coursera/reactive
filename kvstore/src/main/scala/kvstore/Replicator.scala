@@ -59,9 +59,7 @@ class Replicator(val replica: ActorRef) extends Actor {
     case SnapshotAck(k,seq) =>
       myLog(s"~~> [$seq] SNAPSHOTACK $k")
       val (ar: ActorRef, rep: Replicate) = acks(seq)
-      println("********************* acks before" + acks)
       acks -= seq
-      println("********************* acks after" + acks)
       removeFromPending(seq)
       ar ! Replicated(rep.key,rep.id)
     case TimeForBatchSend =>
@@ -82,7 +80,6 @@ class Replicator(val replica: ActorRef) extends Actor {
 
   // (Re-)sends all snapshots that are currently pending.
   def sendBatchOfSnapshots: Unit = {
-    println("############### Sending Batch!")
     pending.foreach { replica ! _ } // oldest in front
   }
 
