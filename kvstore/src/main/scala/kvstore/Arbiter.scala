@@ -1,6 +1,7 @@
 package kvstore
 
-import akka.actor.{ActorRef, Actor}
+import akka.actor.{ActorRef, Actor, ActorLogging}
+import akka.event.LoggingReceive
 import scala.collection.immutable
 
 object Arbiter {
@@ -17,12 +18,12 @@ object Arbiter {
   case class Replicas(replicas: Set[ActorRef])
 }
 
-class Arbiter extends Actor {
+class Arbiter extends Actor with ActorLogging {
   import Arbiter._
   var leader: Option[ActorRef] = None
   var replicas = Set.empty[ActorRef]
 
-  def receive = {
+  def receive = LoggingReceive {
     case Join =>
       if (leader.isEmpty) {
         leader = Some(sender)

@@ -1,6 +1,7 @@
 package kvstore
 
-import akka.actor.{ Props, ActorRef, Actor }
+import akka.actor.{ Props, ActorRef, Actor, ActorLogging }
+import akka.event.LoggingReceive
 import kvstore.Arbiter._
 import scala.collection.immutable.Queue //
 //import akka.actor.SupervisorStrategy.Restart  // FIXTHIS clean up all these comments.
@@ -33,7 +34,7 @@ object Replica {
   def props(arbiter: ActorRef, persistenceProps: Props): Props = Props(new Replica(arbiter, persistenceProps))
 }
 
-class Replica(val arbiter: ActorRef, persistenceProps: Props) extends Actor {
+class Replica(val arbiter: ActorRef, persistenceProps: Props) extends Actor with ActorLogging {
   import Replica._
   import Replicator._
   import Propagator._
@@ -52,7 +53,7 @@ class Replica(val arbiter: ActorRef, persistenceProps: Props) extends Actor {
   var expectedSeq = 0l
 
   // Start up your own persistence actor, and shut it down on completion.
-  val persister = context.actorOf(persistenceProps, name = "persister")
+  val persister = context.actorOf(persistenceProps, name = s"persister-${self.path.name}")
 
   // Supervision strategy (for persistence faillure) just resumes, with 10 retries per second.
   // Otherwise, follow default strategy.
@@ -65,13 +66,13 @@ class Replica(val arbiter: ActorRef, persistenceProps: Props) extends Actor {
   // Tell arbiter that you are ready to join the cluster.
   arbiter ! Join
 
-  def receive = {
+  def receive = LoggingReceive {
     case JoinedPrimary   => context.become(leader)
     case JoinedSecondary => context.become(replica)
   }
 
   /* Behavior for  the leader role. */
-  val leader: Receive = {
+  val leader = LoggingReceive {
     case Insert(k,v,id) =>
       myLog(s"==> ($id) INSERT $k=$v")
       kv += k -> v
@@ -92,7 +93,7 @@ class Replica(val arbiter: ActorRef, persistenceProps: Props) extends Actor {
   }
 
   /* Behavior for the replica role. */
-  val replica: Receive = {
+  val replica = LoggingReceive {
     case Get(k,id) =>
       myLog(s"==> ($id) GET $k")
       val vOpt = kv.get(k)
@@ -117,7 +118,8 @@ class Replica(val arbiter: ActorRef, persistenceProps: Props) extends Actor {
   def processJoinedReplicas(joinedReplicas: Set[ActorRef]) = {
     // Register replicas and create/register replicators.
     val joinedReplicators: Set[ActorRef] = joinedReplicas.map { r =>
-      val replicator = context.actorOf(Replicator.props(r))
+      val replicator = context.actorOf(Replicator.props(r),
+        name = s"replicator-${r.path.name}")
       secondaries += r -> replicator
       replicator
     }

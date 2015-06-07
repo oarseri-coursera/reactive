@@ -1,8 +1,8 @@
 package kvstore
 
 import akka.actor.Props
-import akka.actor.Actor
-import akka.actor.ActorRef
+import akka.actor.{ Actor, ActorLogging, ActorRef }
+import akka.event.LoggingReceive
 import akka.actor.Cancellable
 import scala.concurrent.duration._
 import scala.language.postfixOps
@@ -19,7 +19,7 @@ object Replicator {
   def props(replica: ActorRef): Props = Props(new Replicator(replica))
 }
 
-class Replicator(val replica: ActorRef) extends Actor {
+class Replicator(val replica: ActorRef) extends Actor with ActorLogging {
   import Replicator._
   import Replica._
   import context.dispatcher
@@ -52,16 +52,19 @@ class Replicator(val replica: ActorRef) extends Actor {
     batchScheduler.cancel()
   }
   
-  def receive: Receive = {
+  def receive = LoggingReceive {
     case rep @ Replicate(k,vOpt,id) =>
       myLog(s"~~> ($id) REPLICATE $k=$vOpt from $sender")
       stageSnapshot(rep, sender)
     case SnapshotAck(k,seq) =>
       myLog(s"~~> [$seq] SNAPSHOTACK $k")
-      val (ar: ActorRef, rep: Replicate) = acks(seq)
-      acks -= seq
-      removeFromPending(seq)
-      ar ! Replicated(rep.key,rep.id)
+      // Can get duplicate acks because of retries by replica's persistence asker.
+      if (acks.contains(seq)) {
+        val (ar: ActorRef, rep: Replicate) = acks(seq)
+        acks -= seq
+        removeFromPending(seq)
+        ar ! Replicated(rep.key,rep.id)
+      }
     case TimeForBatchSend =>
       sendBatchOfSnapshots
     case _ =>

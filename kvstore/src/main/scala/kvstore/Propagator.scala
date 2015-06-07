@@ -1,6 +1,7 @@
 package kvstore
 
-import akka.actor.{ Props, ActorRef, Actor, ActorContext }
+import akka.actor.{ Props, ActorRef, Actor, ActorContext, ActorLogging }
+import akka.event.LoggingReceive
 import akka.pattern.ask
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
@@ -47,7 +48,7 @@ object Propagator {
 // broadcast event whereby the set of pending replicators is empty.  (Assuming
 // that subscriptions will end automatically by whatever means of stopping is
 // employed.)
-class Propagator(k: String, vOpt: Option[String], id: Long) extends Actor {
+class Propagator(k: String, vOpt: Option[String], id: Long) extends Actor with ActorLogging {
   import Propagator._
   import Replicator._
   import context.system
@@ -55,7 +56,7 @@ class Propagator(k: String, vOpt: Option[String], id: Long) extends Actor {
   var requestor: ActorRef = _
   var pendingReplicators: Set[ActorRef] = Set.empty
 
-  def receive = {
+  def receive = LoggingReceive {
     case Start(initReps) =>
       requestor = sender
       system.eventStream.subscribe(self, classOf[ReplicatorsJoined])
@@ -65,7 +66,7 @@ class Propagator(k: String, vOpt: Option[String], id: Long) extends Actor {
       context.become(processing)
   }
 
-  def processing: Receive = {
+  def processing = LoggingReceive {
     case ReplicatorsJoined(reps) =>
       processJoined(reps)
     case ReplicatorsDeparted(reps) =>

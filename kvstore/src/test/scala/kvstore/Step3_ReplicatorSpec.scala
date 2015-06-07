@@ -13,7 +13,7 @@ import org.scalactic.ConversionCheckedTripleEquals
 
 class Step3_ReplicatorSpec extends TestKit(ActorSystem("Step3ReplicatorSpec"))
     with FunSuiteLike
-        with BeforeAndAfterAll
+    with BeforeAndAfterAll
     with Matchers
     with ConversionCheckedTripleEquals
     with ImplicitSender
