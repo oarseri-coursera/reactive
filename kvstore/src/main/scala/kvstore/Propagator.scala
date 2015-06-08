@@ -3,8 +3,8 @@ package kvstore
 import akka.actor.{ Props, ActorRef, Actor, ActorContext, ActorLogging }
 import akka.event.LoggingReceive
 import akka.pattern.ask
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
+import scala.concurrent.ExecutionContext.Implicits.global
 import akka.actor.PoisonPill
 import akka.util.Timeout
 import scala.concurrent.duration._

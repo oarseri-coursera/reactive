@@ -3,17 +3,12 @@ package kvstore
 import akka.actor.{ Props, ActorRef, Actor, ActorLogging }
 import akka.event.LoggingReceive
 import kvstore.Arbiter._
-import scala.collection.immutable.Queue //
-//import akka.actor.SupervisorStrategy.Restart  // FIXTHIS clean up all these comments.
-import scala.annotation.tailrec //
-import akka.pattern.{ ask, pipe } // used
+//import akka.pattern.{ ask, pipe } // used
 import scala.concurrent.Future
-import akka.actor.Terminated  //
 import scala.concurrent.duration._
 import scala.language.postfixOps
-import akka.actor.PoisonPill // used
+import akka.actor.PoisonPill
 import akka.actor.OneForOneStrategy
-import akka.actor.SupervisorStrategy
 import akka.actor.SupervisorStrategy.{ Resume, Escalate }
 
 object Replica {

@@ -1,9 +1,9 @@
 package object kvstore {
 
   /**
-    * For easily switching between loggers.
+    * For easily switching between loggers, aside from Actor logging.
     */
   //def myLog(s: String) = println(s)
-  def myLog(s: String) = {}  // FIXTHIS
+  def myLog(s: String) = {}
 
 }

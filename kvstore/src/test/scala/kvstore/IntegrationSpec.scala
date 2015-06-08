@@ -87,21 +87,21 @@ class IntegrationSpec(_system: ActorSystem) extends TestKit(_system)
    * using an Arbiter variant that introduces randomly message-dropping forwarder Actors).
    */
 
-  // test("case1: Totally non-flaky system should handle test sequence of ops") {
-  //   doOpsTest("c1", flakyPersistence = false, flakyReplication = false)
-  // }
+  test("case1: Totally non-flaky system should handle test sequence of ops") {
+    doOpsTest("c1", flakyPersistence = false, flakyReplication = false)
+  }
 
-  // test("case2: System with flaky persistence should handle test sequence of ops") {
-  //   doOpsTest("c2", flakyPersistence = true, flakyReplication = false)
-  // }
+  test("case2: System with flaky persistence should handle test sequence of ops") {
+    doOpsTest("c2", flakyPersistence = true, flakyReplication = false)
+  }
 
   test("case3: System with flaky replication should handle test sequence of ops") {
     doOpsTest("c3", flakyPersistence = false, flakyReplication = true)
   }
 
-  // test("case4: Totally flaky system should handle test sequence of ops") {
-  //   doOpsTest("c4", flakyPersistence = true, flakyReplication = true)
-  // }
+  test("case4: Totally flaky system should handle test sequence of ops") {
+    doOpsTest("c4", flakyPersistence = true, flakyReplication = true)
+  }
 
   // Sets up three-node system, optionally with flaky persistence and/or replication,
   // then runs through some basic operations.
@@ -117,9 +117,9 @@ class IntegrationSpec(_system: ActorSystem) extends TestKit(_system)
       s"${caseName}-primary")
 
     // (LOL have to spend some time after creating primary and before
-    // creatng secondary, or else you might not be sure that the primary
-    // actually joins the cluster first.  Avoided in provided unit tests
-    // by using a probe for the arbiter and manually sending Joined<role?
+    // creatng secondary, or else it is pretty uncertain that the primary
+    // actually joins the cluster first.  Provided unit tests avoided this
+    // by using a probe for the arbiter and manually sending Joined<role>
     // messages.)
     val clientP = session(primary)
 
