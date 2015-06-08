@@ -1,15 +1,13 @@
 package kvstore
 
-import akka.actor.ActorSystem
-import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.duration._
 import akka.testkit.TestProbe
-import akka.actor.{ ActorRef, Actor }
+import akka.actor.{ ActorRef, ActorSystem, Actor }
 import org.scalatest.Matchers
 import org.scalatest.FunSuiteLike
 import akka.actor.Props
 import akka.testkit.TestKit
 import akka.testkit.ImplicitSender
-import scala.concurrent.duration._
 
 object Tools {
   class TestRefWrappingActor(val probe: TestProbe) extends Actor {
@@ -26,6 +24,7 @@ trait Tools { this: TestKit with FunSuiteLike with Matchers with ImplicitSender 
 
   import Arbiter._
   import Tools._
+  import Asker._
 
   def probeProps(probe: TestProbe): Props = Props(classOf[TestRefWrappingActor], probe)
 

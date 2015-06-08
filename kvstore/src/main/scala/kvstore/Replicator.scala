@@ -59,6 +59,7 @@ class Replicator(val replica: ActorRef) extends Actor with ActorLogging {
     case SnapshotAck(k,seq) =>
       myLog(s"~~> [$seq] SNAPSHOTACK $k")
       // Can get duplicate acks because of retries by replica's persistence asker.
+      // FIXTHIS (and maybe by just retries in general in acking, soon?)
       if (acks.contains(seq)) {
         val (ar: ActorRef, rep: Replicate) = acks(seq)
         acks -= seq
